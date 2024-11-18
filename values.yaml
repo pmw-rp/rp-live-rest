@@ -1,0 +1,25 @@
+image:
+  repository: pmwrp/rp-live
+  tag: "0.0.17"
+
+source:
+  namespace: green
+  pod_prefix: green
+#  sasl:
+#    enabled: true
+#    secret: source
+#  tls:
+#    enabled: true
+#    skip_cert_verify: true
+
+destination:
+  seed_broker: "https://redpanda-0.o11y.cs.redpanda.com:443"
+  logs_topic: logs
+  metrics_topic: metrics
+  secret: destination
+
+logs:
+  enabled: true
+
+metrics:
+  enabled: true

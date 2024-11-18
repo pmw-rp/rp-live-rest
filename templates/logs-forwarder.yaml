@@ -1,0 +1,159 @@
+{{- if .Values.logs.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: logs-forwarder
+  namespace: {{ .Release.Namespace }}
+data:
+  logs-forwarder.yaml: |-
+    http:
+      enabled: true
+      address: 0.0.0.0:4195
+      root_path: /benthos
+      debug_endpoints: true
+
+    redpanda:
+      seed_brokers: [ {{- .Values.source.seed_broker | quote -}} ]
+      client_id: {{ .Values.source.client_id }}
+      rack_id: ""
+      timeout: 10s
+      max_message_bytes: 1MB
+      {{- if .Values.source.sasl }}
+      sasl:
+        - mechanism: ${SOURCE_MECHANISM}
+          username: ${SOURCE_USERNAME}
+          password: ${SOURCE_PASSWORD}
+      {{- end }}
+      {{- if .Values.source.tls }}
+      tls:
+      {{- toYaml .Values.source.tls | nindent 8 }}
+      {{- end }}
+
+    input:
+      label: "logs_forwarder_pod_log_input"
+      broker_pod_log2:
+        namespace: ${REDPANDA_NAMESPACE}
+        pod_prefix: ${REDPANDA_POD_PREFIX}
+        pod_name: ${POD_NAME}
+        container: redpanda
+        {{- if (.Values.source.sasl).enabled | default false }}
+        sasl:
+          - mechanism: ${SOURCE_MECHANISM}
+            username: ${SOURCE_USERNAME}
+            password: ${SOURCE_PASSWORD}
+        {{- end }}
+        {{- if (.Values.source.tls).enabled | default false }}
+        tls:
+        {{- toYaml .Values.source.tls | nindent 10 }}
+        {{- end }}
+        extractor: '^(?P<level>\w+)  (?P<timestamp>\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}) \[shard (?P<shard>\d+):'
+        template: |
+          {
+            "@timestamp": "unixTS(toTS(line.timestamp, \"2006-01-02 15:04:05,000\", true))",
+            "time": "toString(toTS(line.timestamp, \"2006-01-02 15:04:05,000\", true), \"2006-01-02 15:04:05,000\")",
+            "stream": "'stderr'",
+            "_p": "'F'",
+            "log": "log",
+            "level": "line.level",
+            "kubernetes": {
+              "pod_name": "pod.metadata.name",
+              "namespace_name": "pod.metadata.namespace",
+              "pod_id": "pod.metadata.uid",
+              "labels": "pod.metadata.labels",
+              "host": "pod.spec.nodeName",
+              "container_name": "pod.spec.containers[0].name",
+              "docker_id": "pod.status.containerStatuses[1].containerID",
+              "container_hash": "pod.status.containerStatuses[1].imageID",
+              "container_image": "pod.status.containerStatuses[1].image"
+            },
+            "redpanda_id": "replace(broker.cluster_id, \"redpanda.\", \"\")",
+            "redpanda_source": "'self_hosted'"
+          }
+
+    output:
+      label: "logs_forwarder_kafka_output"
+      kafka_rest:
+        baseurl: {{ .Values.destination.seed_broker | quote }}
+        topic: {{ .Values.destination.logs_topic | quote }}
+    #    key: ${! meta("redpanda_id") + "-" + meta("redpanda_node_id") }
+        username: ${TELEMETRY_USERNAME}
+        password: ${TELEMETRY_PASSWORD}
+        timeout: 60s
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: logs-forwarder
+  labels:
+    app: logs-forwarder
+spec:
+  clusterIP: None
+  selector:
+    app: logs-forwarder
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: logs-forwarder
+  labels:
+    app: logs-forwarder
+spec:
+  serviceName: "logs-forwarder"
+  selector:
+    matchLabels:
+      app: logs-forwarder
+  replicas: {{ ((lookup "apps/v1" "StatefulSet" .Values.source.namespace "redpanda").spec).replicas | default 1 }}
+  template:
+    metadata:
+      labels:
+        app: logs-forwarder
+    spec:
+      containers:
+        - name: logs-forwarder
+          image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+          command: ["/redpanda-connect", "run", "/config/logs-forwarder.yaml"]
+          volumeMounts:
+            - name: logs-forwarder
+              mountPath: /config
+          env:
+            - name: REDPANDA_NAMESPACE
+              value: {{ .Values.source.namespace }}
+            - name: REDPANDA_POD_PREFIX
+              value: {{ .Values.source.pod_prefix }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TELEMETRY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.destination.secret }}
+                  key: "password"
+            - name: TELEMETRY_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.destination.secret }}
+                  key: "username"
+            {{- if (.Values.source.sasl).enabled | default false }}
+            - name: SOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.source.sasl.secret }}
+                  key: "password"
+            - name: SOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.source.sasl.secret }}
+                  key: "username"
+            - name: SOURCE_MECHANISM
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.source.sasl.secret }}
+                  key: "mechanism"
+            {{- end }}
+      volumes:
+        - name: logs-forwarder
+          configMap:
+            name: logs-forwarder
+      serviceAccountName: pod-log-reader
+{{- end }}
