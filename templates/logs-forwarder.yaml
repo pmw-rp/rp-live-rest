@@ -33,8 +33,9 @@ data:
       label: "logs_forwarder_pod_log_input"
       broker_pod_log2:
         namespace: ${REDPANDA_NAMESPACE}
-        pod_prefix: ${REDPANDA_POD_PREFIX}
-        pod_name: ${POD_NAME}
+        redpanda_pod_prefix: ${REDPANDA_POD_PREFIX}
+        forwarder_pod_name: ${FORWARDER_POD_NAME}
+        kafka_port: {{ .Values.source.kafka_port }}
         container: redpanda
         {{- if (.Values.source.sasl).enabled | default false }}
         sasl:
@@ -119,8 +120,8 @@ spec:
             - name: REDPANDA_NAMESPACE
               value: {{ .Values.source.namespace }}
             - name: REDPANDA_POD_PREFIX
-              value: {{ .Values.source.pod_prefix }}
-            - name: POD_NAME
+              value: {{ .Values.source.redpanda_pod_prefix }}
+            - name: FORWARDER_POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name

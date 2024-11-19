@@ -33,8 +33,10 @@ data:
       label: "metrics_forwarder_pod_metrics_input"
       broker_pod_metrics:
         namespace: ${REDPANDA_NAMESPACE}
-        pod_prefix: ${REDPANDA_POD_PREFIX}
-        pod_name: ${POD_NAME}
+        redpanda_pod_prefix: ${REDPANDA_POD_PREFIX}
+        forwarder_pod_name: ${FORWARDER_POD_NAME}
+        kafka_port: {{ .Values.source.kafka_port }}
+        admin_port: {{ .Values.source.admin_port }}
         container: redpanda
         {{- if (.Values.source.sasl).enabled | default false }}
         sasl:
@@ -114,8 +116,8 @@ spec:
             - name: REDPANDA_NAMESPACE
               value: {{ .Values.source.namespace }}
             - name: REDPANDA_POD_PREFIX
-              value: {{ .Values.source.pod_prefix}}
-            - name: POD_NAME
+              value: {{ .Values.source.redpanda_pod_prefix}}
+            - name: FORWARDER_POD_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.name
@@ -144,7 +146,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.source.sasl.secret }}
-                  key: "mechanism
+                  key: "mechanism"
             {{- end }}
       volumes:
         - name: metrics-forwarder

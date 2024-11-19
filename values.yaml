@@ -1,10 +1,13 @@
 image:
   repository: pmwrp/rp-live
-  tag: "0.0.17"
+  tag: "0.0.24"
 
 source:
-  namespace: green
-  pod_prefix: green
+  namespace: redpanda
+  # the redpanda pod prefix is the pod name but without the hyphen and ordinal (so for example redpdpan
+  redpanda_pod_prefix: redpanda
+  kafka_port: 9093
+  admin_port: 9644
 #  sasl:
 #    enabled: true
 #    secret: source
